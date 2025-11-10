@@ -13,8 +13,9 @@ func Validate(modelsStruct interface{}) error {
 }
 
 type Comment struct {
-	ID        int64     `json:"id" validate:"required"`
-	ParentID  int64     `json:"parent_id" validate:"required"`
-	Content   string    `json:"content" validate:"required"`
-	CreatedAt time.Time `json:"created_at" validate:"required"`
+	ID        int64      `json:"id" validate:"required"`
+	ParentID  *int64     `json:"parent_id"`
+	Content   string     `json:"content" validate:"required"`
+	CreatedAt time.Time  `json:"created_at" validate:"required"`
+	Children  []*Comment `json:"children"`
 }
