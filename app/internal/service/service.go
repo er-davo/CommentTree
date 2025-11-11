@@ -27,17 +27,42 @@ func NewCommentsService(repo CommentsRepository, log *zlog.Zerolog) *CommentsSer
 }
 
 func (s *CommentsService) Create(ctx context.Context, com *models.Comment) error {
-	return s.repo.Create(ctx, com)
+	if err := s.repo.Create(ctx, com); err != nil {
+		s.log.Error().
+			Err(err).
+			Msg("failed to create comment")
+		return err
+	}
+	return nil
 }
 
 func (s *CommentsService) Update(ctx context.Context, com *models.Comment) error {
-	return s.repo.Update(ctx, com)
+	if err := s.repo.Update(ctx, com); err != nil {
+		s.log.Error().
+			Err(err).
+			Msg("failed to update comment")
+		return err
+	}
+	return nil
 }
 
 func (s *CommentsService) Delete(ctx context.Context, id int64) error {
-	return s.repo.Delete(ctx, id)
+	if err := s.repo.Delete(ctx, id); err != nil {
+		s.log.Error().
+			Err(err).
+			Msg("failed to delete comment")
+		return err
+	}
+	return nil
 }
 
 func (s *CommentsService) GetByParent(ctx context.Context, parentID *int64, limit, offset int64) ([]*models.Comment, error) {
-	return s.repo.GetByParent(ctx, parentID, limit, offset)
+	coms, err := s.repo.GetByParent(ctx, parentID, limit, offset)
+	if err != nil {
+		s.log.Error().
+			Err(err).
+			Msg("failed to get comments")
+		return nil, err
+	}
+	return coms, nil
 }
