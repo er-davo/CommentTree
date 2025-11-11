@@ -10,21 +10,21 @@ import (
 	"github.com/wb-go/wbf/retry"
 )
 
-type CommentRepository struct {
+type CommentsRepository struct {
 	db       *dbpg.DB
 	strategy retry.Strategy
 	sb       squirrel.StatementBuilderType
 }
 
-func NewCommentRepository(db *dbpg.DB, strategy retry.Strategy) *CommentRepository {
-	return &CommentRepository{
+func NewCommentsRepository(db *dbpg.DB, strategy retry.Strategy) *CommentsRepository {
+	return &CommentsRepository{
 		db:       db,
 		strategy: strategy,
 		sb:       squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar),
 	}
 }
 
-func (r *CommentRepository) Create(ctx context.Context, com *models.Comment) error {
+func (r *CommentsRepository) Create(ctx context.Context, com *models.Comment) error {
 	if com == nil {
 		return ErrNilValue
 	}
@@ -51,7 +51,7 @@ func (r *CommentRepository) Create(ctx context.Context, com *models.Comment) err
 	)
 }
 
-func (r *CommentRepository) Update(ctx context.Context, com *models.Comment) error {
+func (r *CommentsRepository) Update(ctx context.Context, com *models.Comment) error {
 	if com == nil {
 		return ErrNilValue
 	}
@@ -70,7 +70,7 @@ func (r *CommentRepository) Update(ctx context.Context, com *models.Comment) err
 	return wrapDBError(err)
 }
 
-func (r *CommentRepository) Delete(ctx context.Context, id int64) error {
+func (r *CommentsRepository) Delete(ctx context.Context, id int64) error {
 	if id == 0 {
 		return ErrNilValue
 	}
@@ -88,7 +88,7 @@ func (r *CommentRepository) Delete(ctx context.Context, id int64) error {
 	return wrapDBError(err)
 }
 
-func (r *CommentRepository) GetByParent(ctx context.Context, parentID *int64, limit, offset int64) ([]*models.Comment, error) {
+func (r *CommentsRepository) GetByParent(ctx context.Context, parentID *int64, limit, offset int64) ([]*models.Comment, error) {
 	query := r.sb.
 		Select("id", "parent_id", "content", "created_at").
 		From("comments").
