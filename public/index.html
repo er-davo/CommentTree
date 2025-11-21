@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Древовидные комментарии — UI</title>
+<style>
+  :root{--gap:8px;--muted:#666;--accent:#0b67c2}
+  body{font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;margin:20px;color:#111}
+  .container{max-width:1000px;margin:0 auto}
+  header{display:flex;gap:12px;align-items:center;margin-bottom:18px}
+  input[type="text"], textarea, select{font:inherit;padding:8px;border:1px solid #ddd;border-radius:6px;width:100%}
+  button{padding:8px 12px;border-radius:6px;border:0;background:var(--accent);color:#fff;cursor:pointer}
+  .controls{display:flex;gap:8px;align-items:center}
+  .search-bar{flex:1;display:flex;gap:8px}
+  main{display:flex;gap:18px}
+  .col{flex:1}
+  .panel{padding:12px;border:1px solid #eee;border-radius:8px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .comment{padding:8px 10px;border-radius:6px;margin-top:8px;background:#fbfbfd;border:1px solid #f0f0f4}
+  .meta{font-size:13px;color:var(--muted);margin-bottom:6px}
+  .content{white-space:pre-wrap}
+  .actions{margin-top:8px;display:flex;gap:8px}
+  .reply-form, .edit-form{margin-top:8px}
+  .children{margin-left:20px;margin-top:8px}
+  .small{font-size:13px;color:var(--muted)}
+  .pager{display:flex;gap:8px;align-items:center;margin-top:12px}
+  .result-item{padding:8px;border-bottom:1px dashed #eee}
+  .inline-btn{background:transparent;color:var(--accent);border:0;cursor:pointer;padding:0;font-size:13px}
+  .muted{color:var(--muted)}
+  footer{margin-top:18px;font-size:13px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h2 style="margin:0">Комментарии — интерфейс</h2>
+    <div style="margin-left:auto" class="controls">
+      <div class="search-bar">
+        <input id="searchInput" type="text" placeholder="Поиск по комментариям (ключевые слова)"/>
+        <button id="searchBtn">Найти</button>
+      </div>
+      <select id="sortSelect" title="Сортировка">
+        <option value="">Сортировать: дефолт</option>
+        <option value="created_desc">Сначала новые</option>
+        <option value="created_asc">Сначала старые</option>
+      </select>
+    </div>
+  </header>
+
+  <main>
+    <section class="col">
+      <div class="panel">
+        <h3 style="margin-top:0">Дерево комментариев</h3>
+
+        <div style="display:flex;gap:8px;align-items:center">
+          <label class="small">Показывать:</label>
+          <select id="limitSelect" style="width:80px">
+            <option value="5">5</option>
+            <option value="10" selected>10</option>
+            <option value="20">20</option>
+          </select>
+          <div class="pager" style="margin-left:auto">
+            <button id="prevPage" class="inline-btn">←</button>
+            <span id="pageInfo" class="small">1</span>
+            <button id="nextPage" class="inline-btn">→</button>
+          </div>
+        </div>
+
+        <div id="treeRoot" style="margin-top:12px"></div>
+
+        <hr style="margin:12px 0"/>
+        <h4 style="margin:6px 0">Новый комментарий (на корень)</h4>
+        <div>
+          <textarea id="newContent" rows="3" placeholder="Текст комментария"></textarea>
+          <button id="createRoot" style="margin-top:8px">Создать</button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="col" style="max-width:360px">
+      <div class="panel">
+        <h3 style="margin-top:0">Результаты поиска</h3>
+        <div id="searchResults" style="min-height:120px"></div>
+        <div class="pager" style="justify-content:space-between">
+          <div class="small muted">Пагинация поиска</div>
+          <div>
+            <button id="searchPrev" class="inline-btn">←</button>
+            <span id="searchPageInfo" class="small">1</span>
+            <button id="searchNext" class="inline-btn">→</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:12px">
+        <h4 style="margin:6px 0">Подсказки</h4>
+        <ul style="margin:0 0 0 18px;padding:0">
+          <li class="small muted">Кнопки «Ответить» открывают форму под комментарием</li>
+          <li class="small muted">Удаление удаляет и все вложенные</li>
+          <li class="small muted">Пагинация контролирует количество топ-уровнев комментариев</li>
+        </ul>
+      </div>
+    </aside>
+  </main>
+
+  <footer>Интерфейс использует API: POST /comments, POST /comments/:id, DELETE /comments/:id, GET /comments?parent=..., GET /comments/search</footer>
+</div>
+
+<script>
+const API_BASE = '';
+
+let page = 0;
+let limit = parseInt(document.getElementById('limitSelect').value,10);
+let sort = '';
+
+let sPage = 0;
+let sLimit = 10;
+let lastSearchQuery = '';
+
+const treeRoot = document.getElementById('treeRoot');
+const searchResults = document.getElementById('searchResults');
+
+function api(path, opt = {}) {
+  const url = (API_BASE + path).replace(/([^:])\/\//g, '$1/');
+  return fetch(url, opt).then(async r => {
+    const text = await r.text();
+    let json;
+    try { json = text ? JSON.parse(text) : null; } catch (_) { json = text; }
+    if (!r.ok) {
+      const err = json && json.error ? json.error : r.statusText;
+      throw new Error(err || 'api error');
+    }
+    return json;
+  });
+}
+
+function buildCommentNode(c) {
+  const wrap = document.createElement('div');
+  wrap.className = 'comment';
+
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  meta.innerHTML = `<strong>#${c.id}</strong> <span class="muted">${c.created_at ? '(' + escapeHtml(c.created_at) + ')' : ''}</span>`;
+
+  const content = document.createElement('div');
+  content.className = 'content';
+  content.textContent = c.content || '';
+
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+
+  const replyBtn = document.createElement('button');
+  replyBtn.className = 'inline-btn';
+  replyBtn.textContent = 'Ответить';
+  replyBtn.onclick = () => toggleReplyForm(wrap, c.id);
+
+  const editBtn = document.createElement('button');
+  editBtn.className = 'inline-btn';
+  editBtn.textContent = 'Править';
+  editBtn.onclick = () => toggleEditForm(wrap, c);
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'inline-btn';
+  delBtn.textContent = 'Удалить';
+  delBtn.onclick = async () => {
+    if (!confirm('Удалить комментарий и все вложенные?')) return;
+    try {
+      await api(`/comments/${c.id}`, { method: 'DELETE' });
+      loadTree();
+    } catch (e) {
+      alert('Ошибка при удалении: ' + e.message);
+    }
+  };
+
+  // Кнопка "Показать ответы"
+  const showChildrenBtn = document.createElement('button');
+  showChildrenBtn.className = 'inline-btn';
+  showChildrenBtn.textContent = 'Показать ответы';
+  let childrenLoaded = false;
+  showChildrenBtn.onclick = async () => {
+    if (childrenLoaded) {
+      childrenWrap.style.display = childrenWrap.style.display === 'none' ? 'block' : 'none';
+      return;
+    }
+    try {
+      const data = await api(`/comments?parent=${c.id}`);
+      renderChildren(data);
+      childrenLoaded = true;
+    } catch (e) {
+      alert('Ошибка при загрузке ответов: ' + e.message);
+    }
+  };
+
+  actions.appendChild(replyBtn);
+  actions.appendChild(document.createTextNode(' · '));
+  actions.appendChild(editBtn);
+  actions.appendChild(document.createTextNode(' · '));
+  actions.appendChild(delBtn);
+  actions.appendChild(document.createTextNode(' · '));
+  actions.appendChild(showChildrenBtn);
+
+  wrap.appendChild(meta);
+  wrap.appendChild(content);
+  wrap.appendChild(actions);
+
+  const childrenWrap = document.createElement('div');
+  childrenWrap.className = 'children';
+  childrenWrap.style.marginLeft = '20px';
+  wrap.appendChild(childrenWrap);
+
+  function renderChildren(list) {
+    childrenWrap.innerHTML = '';
+    if (!Array.isArray(list) || list.length === 0) {
+      childrenWrap.innerHTML = '<div class="small muted">Ответов нет</div>';
+      return;
+    }
+    list.forEach(ch => childrenWrap.appendChild(buildCommentNode(ch)));
+  }
+
+  // Если изначально пришли дочерние комментарии (children), можно сразу их показать
+  if (Array.isArray(c.children) && c.children.length > 0) {
+    renderChildren(c.children);
+    childrenLoaded = true;
+  }
+
+  return wrap;
+}
+
+function toggleReplyForm(container, parentId) {
+  const existing = container.querySelector('.reply-form');
+  if (existing) { existing.remove(); return; }
+
+  const form = document.createElement('div');
+  form.className = 'reply-form';
+  form.innerHTML = `
+    <textarea rows="3" placeholder="Текст ответа"></textarea>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button>Отправить</button>
+      <button class="inline-btn">Отмена</button>
+    </div>
+  `;
+
+  const txt = form.querySelector('textarea');
+  const send = form.querySelector('button');
+  const cancel = form.querySelectorAll('button')[1];
+
+  send.onclick = async () => {
+    const content = txt.value.trim();
+    if (!content) { alert('Введите текст'); return; }
+    try {
+      await api('/comments/', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        // ---- created_at добавлен ----
+        body: JSON.stringify({ parent_id: parentId, content, created_at: new Date().toISOString() })
+      });
+      loadTree();
+    } catch (e) {
+      alert('Ошибка при создании: ' + e.message);
+    }
+  };
+  cancel.onclick = () => form.remove();
+  container.appendChild(form);
+  txt.focus();
+}
+
+function toggleEditForm(container, comment) {
+  const existing = container.querySelector('.edit-form');
+  if (existing) { existing.remove(); return; }
+
+  const form = document.createElement('div');
+  form.className = 'edit-form';
+  form.innerHTML = `
+    <textarea rows="3">${escapeHtml(comment.content || '')}</textarea>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button>Сохранить</button>
+      <button class="inline-btn">Отмена</button>
+    </div>
+  `;
+
+  const txt = form.querySelector('textarea');
+  const save = form.querySelector('button');
+  const cancel = form.querySelectorAll('button')[1];
+
+  save.onclick = async () => {
+    const content = txt.value.trim();
+    if (!content) { alert('Пустой текст'); return; }
+    try {
+      await api(`/comments/${comment.id}`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        // ---- created_at добавлен ----
+        body: JSON.stringify({ content, created_at: new Date().toISOString() })
+      });
+      loadTree();
+    } catch (e) {
+      alert('Ошибка при обновлении: ' + e.message);
+    }
+  };
+  cancel.onclick = () => form.remove();
+  container.appendChild(form);
+  txt.focus();
+}
+
+function renderTree(list) {
+  treeRoot.innerHTML = '';
+  if (!Array.isArray(list)) {
+    treeRoot.textContent = 'Ожидается массив комментариев';
+    return;
+  }
+  if (list.length === 0) {
+    treeRoot.innerHTML = '<div class="small muted">Комментариев нет</div>';
+    return;
+  }
+  list.forEach(c => treeRoot.appendChild(buildCommentNode(c)));
+}
+
+async function loadTree() {
+  limit = parseInt(document.getElementById('limitSelect').value,10);
+  sort = document.getElementById('sortSelect').value;
+  const offset = page * limit;
+
+  const q = new URLSearchParams({ parent: 'null', limit, offset });
+  if (sort) q.set('sort', sort);
+
+  try {
+    const data = await api('/comments?' + q.toString());
+    renderTree(data || []);
+    document.getElementById('pageInfo').textContent = page + 1;
+  } catch (e) {
+    treeRoot.innerHTML = `<div class="small muted">Ошибка загрузки: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function doSearch(reset=false) {
+  if (reset) sPage = 0;
+  const query = document.getElementById('searchInput').value.trim();
+  lastSearchQuery = query;
+  if (!query) {
+    searchResults.innerHTML = '<div class="small muted">Введите запрос для поиска</div>';
+    return;
+  }
+  const offset = sPage * sLimit;
+
+  const q = new URLSearchParams({ query, limit: sLimit, offset });
+
+  try {
+    const data = await api('/comments/search?' + q.toString());
+    renderSearch(data || []);
+    document.getElementById('searchPageInfo').textContent = sPage + 1;
+  } catch (e) {
+    searchResults.innerHTML = `<div class="small muted">Ошибка поиска: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderSearch(items) {
+  searchResults.innerHTML = '';
+  if (!items.length) {
+    searchResults.innerHTML = '<div class="small muted">Ничего не найдено</div>';
+    return;
+  }
+
+  items.forEach(it => {
+    const row = document.createElement('div');
+    row.className = 'result-item';
+
+    const title = document.createElement('div');
+    title.innerHTML = `<strong>#${escapeHtml(String(it.id))}</strong> <span class="muted">${it.created_at ? '('+escapeHtml(it.created_at)+')' : ''}</span>`;
+
+    const txt = document.createElement('div');
+    txt.textContent = it.content || '';
+    txt.style.whiteSpace = 'pre-wrap';
+
+    const goBtn = document.createElement('button');
+    goBtn.className = 'inline-btn';
+    goBtn.textContent = 'Показать в дереве';
+    goBtn.onclick = () => {
+      page = 0;
+      loadTree().then(() => {
+        const target = Array.from(document.querySelectorAll('#treeRoot .comment')).find(node => {
+          const s = node.querySelector('.meta strong');
+          return s && s.textContent.trim() === ('#' + it.id);
+        });
+        if (target) {
+          target.scrollIntoView({behavior:'smooth',block:'center'});
+          target.style.outline = '3px solid yellow';
+          setTimeout(()=> target.style.outline = '', 2000);
+        } else {
+          alert('Комментарий на текущей странице не найден.');
+        }
+      });
+    };
+
+    const replyBtn = document.createElement('button');
+    replyBtn.className = 'inline-btn';
+    replyBtn.textContent = 'Ответить';
+    replyBtn.onclick = () => {
+      const content = prompt('Текст ответа:');
+      if (!content) return;
+      api('/comments/', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        // ---- created_at добавлен ----
+        body: JSON.stringify({ parent_id: it.id, content, created_at: new Date().toISOString() })
+      }).then(()=> { doSearch(true); loadTree(); })
+        .catch(e => alert('Ошибка: ' + e.message));
+    };
+
+    row.appendChild(title);
+    row.appendChild(txt);
+    row.appendChild(goBtn);
+    const act = document.createElement('div');
+    act.style.marginTop = '6px';
+    act.appendChild(replyBtn);
+    row.appendChild(act);
+
+    searchResults.appendChild(row);
+  });
+}
+
+document.getElementById('createRoot').onclick = async () => {
+  const content = document.getElementById('newContent').value.trim();
+  if (!content) { alert('Введите текст'); return; }
+  try {
+    await api('/comments/', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      // ---- created_at добавлен ----
+      body: JSON.stringify({ parent_id: null, content, created_at: new Date().toISOString() })
+    });
+    document.getElementById('newContent').value = '';
+    loadTree();
+  } catch (e) {
+    alert('Ошибка при создании: ' + e.message);
+  }
+};
+
+document.getElementById('searchBtn').onclick = () => doSearch(true);
+document.getElementById('limitSelect').onchange = () => { page = 0; loadTree(); };
+document.getElementById('sortSelect').onchange = () => { page = 0; loadTree(); };
+document.getElementById('prevPage').onclick = () => { if (page > 0) { page--; loadTree(); }};
+document.getElementById('nextPage').onclick = () => { page++; loadTree(); };
+
+document.getElementById('searchPrev').onclick = () => { if (sPage > 0) { sPage--; doSearch(); }};
+document.getElementById('searchNext').onclick = () => { sPage++; doSearch(); };
+
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+loadTree();
+searchResults.innerHTML = '<div class="small muted">Введите запрос и нажмите «Найти»</div>';
+</script>
+</body>
+</html>

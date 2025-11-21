@@ -12,6 +12,7 @@ type CommentsRepository interface {
 	Update(ctx context.Context, com *models.Comment) error
 	Delete(ctx context.Context, id int64) error
 	GetByParent(ctx context.Context, parentID *int64, limit, offset int64) ([]*models.Comment, error)
+	Search(ctx context.Context, query string, limit, offset int64) ([]*models.Comment, error)
 }
 
 type CommentsService struct {
@@ -62,6 +63,17 @@ func (s *CommentsService) GetByParent(ctx context.Context, parentID *int64, limi
 		s.log.Error().
 			Err(err).
 			Msg("failed to get comments")
+		return nil, err
+	}
+	return coms, nil
+}
+
+func (s *CommentsService) Search(ctx context.Context, query string, limit, offset int64) ([]*models.Comment, error) {
+	coms, err := s.repo.Search(ctx, query, limit, offset)
+	if err != nil {
+		s.log.Error().
+			Err(err).
+			Msg("failed to search comments")
 		return nil, err
 	}
 	return coms, nil

@@ -140,3 +140,44 @@ func TestCommentsRepository_Get(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, chlComs, len(expectedChlComs))
 }
+
+func TestCommentsRepository_Search(t *testing.T) {
+	repo := repository.NewCommentsRepository(db, strategy)
+	ctx := context.Background()
+
+	_, _ = db.ExecContext(t.Context(), "TRUNCATE comments RESTART IDENTITY CASCADE")
+
+	comments := []models.Comment{
+		{Content: "Гитарист играет аккорды", CreatedAt: time.Now()},
+		{Content: "Пианист играет мелодию", CreatedAt: time.Now().Add(1 * time.Minute)},
+		{Content: "Вокалист поёт песню", CreatedAt: time.Now().Add(2 * time.Minute)},
+	}
+
+	for i := range comments {
+		require.NoError(t, repo.Create(ctx, &comments[i]))
+	}
+
+	t.Run("search single word", func(t *testing.T) {
+		results, err := repo.Search(ctx, "гитарист", 10, 0)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+		require.Contains(t, results[0].Content, "Гитарист")
+	})
+
+	t.Run("search multiple words", func(t *testing.T) {
+		results, err := repo.Search(ctx, "играет", 10, 0)
+		require.NoError(t, err)
+		require.Len(t, results, 2) // "Гитарист играет аккорды" и "Пианист играет мелодию"
+	})
+
+	t.Run("search with pagination", func(t *testing.T) {
+		results, err := repo.Search(ctx, "играет", 1, 0)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+
+		resultsNext, err := repo.Search(ctx, "играет", 1, 1)
+		require.NoError(t, err)
+		require.Len(t, resultsNext, 1)
+		require.NotEqual(t, results[0].ID, resultsNext[0].ID)
+	})
+}

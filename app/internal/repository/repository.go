@@ -126,3 +126,41 @@ func (r *CommentsRepository) GetByParent(ctx context.Context, parentID *int64, l
 
 	return result, nil
 }
+
+func (r *CommentsRepository) Search(ctx context.Context, query string, limit, offset int64) ([]*models.Comment, error) {
+	if query == "" {
+		return nil, ErrNilValue
+	}
+
+	const sqlQuery = `
+	WITH q AS (
+		SELECT websearch_to_tsquery('russian', $1) AS tsq
+	)
+	SELECT id, parent_id, content, created_at
+	FROM comments, q
+	WHERE search_vector @@ q.tsq
+	ORDER BY ts_rank(search_vector, q.tsq) DESC, created_at DESC
+	LIMIT $2 OFFSET $3;
+
+	`
+
+	rows, err := r.db.QueryWithRetry(ctx, r.strategy, sqlQuery, query, limit, offset)
+	if err != nil {
+		return nil, wrapDBError(err)
+	}
+	defer rows.Close()
+
+	var results []*models.Comment
+	for rows.Next() {
+		c := &models.Comment{}
+		if err := rows.Scan(&c.ID, &c.ParentID, &c.Content, &c.CreatedAt); err != nil {
+			return nil, wrapDBError(err)
+		}
+		results = append(results, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrapDBError(err)
+	}
+
+	return results, nil
+}

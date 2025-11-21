@@ -1,0 +1,13 @@
+app:
+  port: "8080"
+  shutdown_timeout: 10s
+  migration_dir: ""
+retry:
+  attempts: 3
+  delay: 2s
+  backoff: 1.5
+database:
+  url: ""
+  max_open_conns: 20
+  max_idle_conns: 10
+  conn_max_lifetime: 1h
