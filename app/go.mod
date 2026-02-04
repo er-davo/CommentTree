@@ -11,6 +11,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.40.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.40.0
 	github.com/wb-go/wbf v0.0.8
+	go.uber.org/mock v0.6.0
 )
 
 require (
